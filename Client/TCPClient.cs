@@ -4,7 +4,7 @@ using System.IO;
 using System.Net.Sockets;
 using UnityEngine;
 
-public class TCPClient
+public class TCPClient : MonoBehaviour
 {
     
     public const string LocalIP = "127.0.0.1";
@@ -13,23 +13,23 @@ public class TCPClient
 
     private TcpClient _client;
     private NetworkStream _stream;
+
+    private byte[] _receivedBytes;
     private byte[] _asyncBuffer;
     
     public bool IsConnected;
+    public bool HandlingData = false;
 
     private string _IPAddress;
     private int _port;
 
-    /// <summary>
-    /// Default constructor to define the IP address and Port to connect to
-    /// </summary>
-    /// <param name="IP">IP Address of server</param>
-    /// <param name="port">Port of server</param>
-    public TCPClient(string IP, int port)
+    private void Update()
     {
-        _client = new TcpClient();
-        _IPAddress = IP;
-        _port = port;
+        if (HandlingData)
+        {
+            ClientHandlePackets.HandleData(_receivedBytes);
+            HandlingData = false;
+        }
     }
     
     /// <summary>
@@ -39,6 +39,10 @@ public class TCPClient
     /// <param name="port"></param>
     public void Connect(string ip = LocalIP, int port = DefaultPort)
     {
+        _client = new TcpClient();
+        _IPAddress = ip;
+        _port = port;
+        
         Debug.Log("Attempting to connect to " + _IPAddress + ":" + _port);
 
         // Initialize the buffer
@@ -65,6 +69,7 @@ public class TCPClient
             if (_client.Connected == false)
             {
                 // Invalid connection
+                IsConnected = false;
                 return;
             }
             else
@@ -72,7 +77,7 @@ public class TCPClient
                 // Connected successfully so initialize the reading of data
                 _stream = _client.GetStream();
                 _stream.BeginRead(_asyncBuffer, 0, BufferSize * 2, OnReceiveData, null);
-                IsConnected = false;
+                IsConnected = true;
                 
                 Debug.Log("Connected to the server successfully");
             }
@@ -96,12 +101,35 @@ public class TCPClient
     {
         try
         {
-            // TODO: Implement data reading
+            // Get length of packet and stop reading packet
+            int packetSize = _stream.EndRead(result);
+            
+            // Resize the byte array to receive the rest of the data
+            _receivedBytes = new byte[packetSize];
+            
+            Buffer.BlockCopy(_asyncBuffer, 0, _receivedBytes, 0, packetSize);
+
+            if (packetSize == 0)
+            {
+                // No information received from the server
+                Debug.Log("Disconnected from the server");
+                Application.Quit();
+                return;
+            }
+
+            HandlingData = true;
+            ClientHandlePackets.HandleData(_receivedBytes);
+            _stream.BeginRead(_asyncBuffer, 0, BufferSize * 2, OnReceiveData, null);
+
         }
         catch (Exception e)
         {
+            // No information received from the server
+            Debug.Log(e);
+            Debug.Log("Disconnected from the server");
+            Application.Quit();
             Console.WriteLine(e);
-            throw;
+            return;
         }
     }
 

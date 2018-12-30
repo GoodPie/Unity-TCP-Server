@@ -5,29 +5,36 @@ public class Client
 {
     // Default size of the buffer
     public const int BufferSize = 4096;
-    
-    public int ConnectionID;
-    public string IPAddress;
-    public TcpClient Socket;
-    public NetworkStream Stream;
+    public const int MaxReadFailures = 10;
 
-    private int _maxNoReadFailures = 10;
+    private int _connectionID;
+    public int ConnectionID => _connectionID;
+    
+    private string _ipAddress;
+    public string IPAddress => _ipAddress;
+    private TcpClient _socket;
+    public NetworkStream Stream;
+    private byte[] _readBuffer;
     private int _currentFailures = 0;
 
-    private byte[] _readBuffer;
 
     /// <summary>
     /// Begin listening on the client
     /// </summary>
-    public void Start()
+    public void Start(TcpClient socket, int connectionID, string ip)
     {
+        // Initialize client values 
+        _socket = socket;
+        _connectionID = connectionID;
+        _ipAddress = ip;
+        
         // Initialize the buffer
         _readBuffer = new byte[BufferSize];
-        Socket.SendBufferSize = BufferSize;
-        Socket.ReceiveBufferSize = BufferSize;
+        _socket.SendBufferSize = BufferSize;
+        _socket.ReceiveBufferSize = BufferSize;
 
         // Setup stream
-        Stream = Socket.GetStream();
+        Stream = _socket.GetStream();
         Stream.BeginRead(_readBuffer, 0, BufferSize, ReceiveDataCallback, null);
     }
 
@@ -43,17 +50,21 @@ public class Client
             
             if (readSize <= 0)
             {
+                // Didn't actually get any information from the client meaning we have disconnected
                 _currentFailures += 1;
-                if (_currentFailures >= _maxNoReadFailures)
+                if (_currentFailures >= MaxReadFailures)
                 {
+                    // We haven't received any messages for a while so close the connection
                     CloseConnection();
                 }
-                // Didn't actually get any information from the client
+                
                 return;
             }
+            else
+            {
+                _currentFailures = 0;
+            }
 
-            _currentFailures = 0;
-            
             // Read the data
             byte[] bytes = new byte[readSize];
             Buffer.BlockCopy(_readBuffer, 0, bytes, 0, readSize);
@@ -64,6 +75,7 @@ public class Client
         }
         catch (Exception e)
         {
+            // Exception occured so close the connection
             CloseConnection();
             throw;
         }
@@ -72,11 +84,19 @@ public class Client
     /// <summary>
     /// Close connection to server
     /// </summary>
-    private void CloseConnection()
+    public void CloseConnection()
     {
-        Console.WriteLine("Connection from {0} has been closed", IPAddress);
-        Socket.Close();
+        Console.WriteLine("Connection from {0} has been closed", _ipAddress);
+        _socket.Close();
     }
-    
+
+    /// <summary>
+    /// Helper function to check if the socket is empty
+    /// </summary>
+    /// <returns></returns>
+    public bool IsSocketEmpty()
+    {
+        return _socket == null;
+    }
     
 }
